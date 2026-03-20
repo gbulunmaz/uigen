@@ -16,7 +16,7 @@ on:
 
 jobs:
   claude-pr-review:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
 
     # Only run if comment mentions @claude, or it's a new/updated PR
     if: |
