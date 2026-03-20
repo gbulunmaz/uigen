@@ -1,4 +1,7 @@
 name: Claude Assistant
+# Uses the official Anthropic Claude Code Action
+# Requires: ANTHROPIC_API_KEY secret in repo settings
+
 on:
   issue_comment:
     types: [created]
@@ -8,38 +11,64 @@ on:
     types: [opened, assigned, labeled]
   pull_request_review:
     types: [submitted]
+  pull_request:
+    types: [opened, synchronize]
 
 jobs:
-  claude-response:
-    runs-on: ubuntu-latest
+  claude-pr-review:
+    runs-on: self-hosted
+
+    # Only run if comment mentions @claude, or it's a new/updated PR
+    if: |
+      (github.event_name == 'pull_request') ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review') ||
+      (github.event_name == 'issues')
+
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+
     steps:
-      - uses: anthropics/claude-code-action@v1
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Project Setup
+        run: |
+          npm run setup
+          npm run dev:daemon
+
+    
+
+      - name: Run Claude Code Action
+        uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          # Or use OAuth token instead:
-          # claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
-          # Optional: provide a prompt for automation workflows
-          # prompt: "Review this PR for security issues"
+          custom_instructions: |
+            The project is already set up with all dependencies installed.
+            The server is already running at localhost:3000. Logs from it
+            are being written to logs.txt. If needed, you can query the
+            db with the 'sqlite3' cli. If needed, use the mcp__playwright
+            set of tools to launch a browser and interact with the app.
 
-          # Optional: pass advanced arguments to Claude CLI
-          # claude_args: |
-          #   --max-turns 10
-          #   --model claude-4-0-sonnet-20250805
+          mcp_config: |
+            {
+              "mcpServers": {
+                "playwright": {
+                  "command": "npx",
+                  "args": [
+                    "@playwright/mcp@latest",
+                    "--allowed-origins",
+                    "localhost:3000;cdn.tailwindcss.com;esm.sh"
+                  ]
+                }
+              }
+            }
 
-          # Optional: add custom plugin marketplaces
-          # plugin_marketplaces: "https://github.com/user/marketplace1.git\nhttps://github.com/user/marketplace2.git"
-          # Optional: install Claude Code plugins
-          # plugins: "code-review@claude-code-plugins\nfeature-dev@claude-code-plugins"
-
-          # Optional: add custom trigger phrase (default: @claude)
-          # trigger_phrase: "/claude"
-          # Optional: add assignee trigger for issues
-          # assignee_trigger: "claude"
-          # Optional: add label trigger for issues
-          # label_trigger: "claude"
-          # Optional: grant additional permissions (requires corresponding GitHub token permissions)
-          # additional_permissions: |
-          #   actions: read
-          # Optional: allow bot users to trigger the action
-          # allowed_bots: "dependabot[bot],renovate[bot]"
+          allowed_tools: "Bash(npm:*),Bash(sqlite3:*),mcp__playwright__browser_snapshot,mcp__playwright__browser_click"
